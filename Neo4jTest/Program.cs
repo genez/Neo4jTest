@@ -16,15 +16,12 @@ namespace Neo4jTest
 
         static void Main(string[] args)
         {
-            string host = "localhost";
-            if (args.Length > 0)
-                host = args[0];
+            var host = args[0];
 
             using (var driver = GraphDatabase.Driver($"bolt://{host}", AuthTokens.Basic("neo4j", "antares1")))
             {
                 using (var session = driver.Session())
                 {
-                    
                     switch (args[1])
                     {
                         case "command":
@@ -40,6 +37,10 @@ namespace Neo4jTest
                             }
                             break;
 
+                        case "item":
+                            item(session, args[2]);
+                            break;
+
                         case "hierarchy":
                             hierarchy(session, args[2]);
                             break;
@@ -49,9 +50,10 @@ namespace Neo4jTest
         }
 
         private static Dictionary<string, NtinDefinition> ntins = new Dictionary<string, NtinDefinition>();
-
-        private static void hierarchy(ISession session, string dbkey)
+        private static void loadNtins(ISession session)
         {
+            ntins.Clear();
+
             var sw = Stopwatch.StartNew();
             var ntinsResults = session.Run($"MATCH (n:NTIN) RETURN n");
             if (ntinsResults != null)
@@ -70,30 +72,60 @@ namespace Neo4jTest
             }
             sw.Stop();
             Console.WriteLine($"NTINs loaded. Elapsed: { sw.ElapsedMilliseconds}ms");
+        }
+
+        private static Item fromNode(INode node)
+        {
+            var i = new Item();
+            i.NtinId = ntins[node.Properties["DbKey"].As<string>().Substring(0, 8)].Id;
+            i.Serial = node.Properties["DbKey"].As<string>().Substring(8);
+            i.Sequence = node.Properties["Sequence"].As<int>();
+            i.Type = node.Properties["Type"].As<short>();
+
+            i.OtherData = new Dictionary<string, string>()
+            {
+                { "DbKey", node.Properties["DbKey"].As<string>() },
+                { "Id", node.Id.ToString() }
+            };
+            return i;
+        }
+
+        private static void item(ISession session, string dbkey)
+        {
+            loadNtins(session);
+
+            var sw = Stopwatch.StartNew();
+            var itemsResults = session.Run($"MATCH (i:Item{{DbKey:'{dbkey}'}}) RETURN i LIMIT 1;");
+            Item i = null;
+            if (itemsResults != null)
+            {
+                foreach (var result in itemsResults)
+                {
+                    var node = result["i"].As<INode>();
+                    i = fromNode(node);
+                }
+            }
+            sw.Stop();
+            Console.WriteLine($"Item retrieved from NEODB. Elapsed: { sw.ElapsedMilliseconds}ms");
+            Console.WriteLine(i.AsDBXml());
+        }
+
+        private static void hierarchy(ISession session, string dbkey)
+        {
+            loadNtins(session);
 
             var items = new List<Item>();
 
-            sw.Restart();
+            var sw = Stopwatch.StartNew();
             //var itemsResults = session.Run($"MATCH (parent:Item {{DbKey:'{dbkey}'}}) with parent, collect({{level: 0, parentDbKey: NULL, item: parent}}) as parentItem MATCH (parent)-[c: CONTAINS *]->(child) with parentItem + collect({{level: size(c), parentDbKey: parent.DbKey, item: child}}) as hierarchy UNWIND hierarchy as item RETURN item;");
             var itemsResults = session.Run($"MATCH p = (:Item{{DbKey:'{dbkey}'}})-[r*0..]->(x) RETURN startNode(last(r)).DbKey as DbKey, x as item;");
             if (itemsResults != null)
             {
                 foreach(var result in itemsResults)
                 {
-                    var item = result["item"].As<INode>();
+                    var node = result["item"].As<INode>();
                     var parentDbKey = result["DbKey"].As<String>();
-                    var i = new Item
-                    {
-                        NtinId = ntins[item.Properties["DbKey"].As<string>().Substring(0, 8)].Id,
-                        Serial = item.Properties["DbKey"].As<string>().Substring(8),
-                        
-                        OtherData = new Dictionary<string, string>()
-                        {
-                            { "ParentDbKey", parentDbKey },
-                            { "DbKey", item.Properties["DbKey"].As<string>() },
-                            { "Id", item.Id.ToString() }
-                        },
-                    };
+                    var i = fromNode(node);
                     if (parentDbKey != null)
                     {
                         i.ParentNtinId = ntins[parentDbKey.Substring(0, 8)].Id;
