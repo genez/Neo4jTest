@@ -44,6 +44,14 @@ namespace Neo4jTest
                         case "hierarchy":
                             hierarchy(session, args[2]);
                             break;
+
+                        case "all":
+                            all(session);
+                            break;
+
+                        case "lot_hierarchy":
+                            lot_hierarchy(session, args[2]);
+                            break;
                     }
                 }
             }
@@ -67,7 +75,6 @@ namespace Neo4jTest
                             Id = ntin.Properties["Id"].As<int>(),
                             Ntin = ntin.Properties["Ntin"].As<string>()
                         });
-
                 }
             }
             sw.Stop();
@@ -117,8 +124,7 @@ namespace Neo4jTest
             var items = new List<Item>();
 
             var sw = Stopwatch.StartNew();
-            //var itemsResults = session.Run($"MATCH (parent:Item {{DbKey:'{dbkey}'}}) with parent, collect({{level: 0, parentDbKey: NULL, item: parent}}) as parentItem MATCH (parent)-[c: CONTAINS *]->(child) with parentItem + collect({{level: size(c), parentDbKey: parent.DbKey, item: child}}) as hierarchy UNWIND hierarchy as item RETURN item;");
-            var itemsResults = session.Run($"MATCH p = (:Item{{DbKey:'{dbkey}'}})-[r*0..]->(x) RETURN startNode(last(r)).DbKey as DbKey, x as item;");
+            var itemsResults = session.Run($"MATCH (:Item{{DbKey:'{dbkey}'}})-[rel:CONTAINS*0..]->(child) RETURN startNode(last(rel)).DbKey as DbKey, child as item;");
             if (itemsResults != null)
             {
                 foreach(var result in itemsResults)
@@ -126,6 +132,7 @@ namespace Neo4jTest
                     var node = result["item"].As<INode>();
                     var parentDbKey = result["DbKey"].As<String>();
                     var i = fromNode(node);
+                    i.OtherData["ParentDbKey"] = parentDbKey;
                     if (parentDbKey != null)
                     {
                         i.ParentNtinId = ntins[parentDbKey.Substring(0, 8)].Id;
@@ -136,6 +143,72 @@ namespace Neo4jTest
             }
             sw.Stop();
             Console.WriteLine($"Pallet children list populated from NEODB. Elapsed: { sw.ElapsedMilliseconds}ms");
+
+            sw.Restart();
+            var hierarchy = buildHierarchy(items);
+            sw.Stop();
+            Console.WriteLine($"Hierarchy built in memory. Descendants:{hierarchy.CountDescendants()}. Elapsed: { sw.ElapsedMilliseconds}ms");
+        }
+
+        private static void all(ISession session)
+        {
+            loadNtins(session);
+
+            var items = new List<Item>();
+
+            var sw = Stopwatch.StartNew();
+            var itemsResults = session.Run($"MATCH b WHERE NOT (a:Item)-[:CONTAINS]->(b:Item);");
+            if (itemsResults != null)
+            {
+                foreach (var result in itemsResults)
+                {
+                    var node = result["item"].As<INode>();
+                    var parentDbKey = result["DbKey"].As<String>();
+                    var i = fromNode(node);
+                    i.OtherData["ParentDbKey"] = parentDbKey;
+                    if (parentDbKey != null)
+                    {
+                        i.ParentNtinId = ntins[parentDbKey.Substring(0, 8)].Id;
+                        i.ParentSerial = parentDbKey.Substring(8);
+                    }
+                    items.Add(i);
+                }
+            }
+            sw.Stop();
+            Console.WriteLine($"Lot children list populated from NEODB. Elapsed: { sw.ElapsedMilliseconds}ms");
+
+            sw.Restart();
+            var hierarchy = buildHierarchy(items);
+            sw.Stop();
+            Console.WriteLine($"Hierarchy built in memory. Descendants:{hierarchy.CountDescendants()}. Elapsed: { sw.ElapsedMilliseconds}ms");
+        }
+
+        private static void lot_hierarchy(ISession session, string lot)
+        {
+            loadNtins(session);
+
+            var items = new List<Item>();
+
+            var sw = Stopwatch.StartNew();
+            var itemsResults = session.Run($"MATCH (p:Item)-[c:CONTAINS]->(i:Item)-[r:BELONGS_TO]->(l:Lot {{Lot:'{lot}'}}) RETURN i as item, p.DbKey as DbKey;");
+            if (itemsResults != null)
+            {
+                foreach (var result in itemsResults)
+                {
+                    var node = result["item"].As<INode>();
+                    var parentDbKey = result["DbKey"].As<String>();
+                    var i = fromNode(node);
+                    i.OtherData["ParentDbKey"] = parentDbKey;
+                    if (parentDbKey != null)
+                    {
+                        i.ParentNtinId = ntins[parentDbKey.Substring(0, 8)].Id;
+                        i.ParentSerial = parentDbKey.Substring(8);
+                    }
+                    items.Add(i);
+                }
+            }
+            sw.Stop();
+            Console.WriteLine($"Lot children list populated from NEODB. Elapsed: { sw.ElapsedMilliseconds}ms");
 
             sw.Restart();
             var hierarchy = buildHierarchy(items);
