@@ -102,7 +102,7 @@ namespace Neo4jTest
             loadNtins(session);
 
             var sw = Stopwatch.StartNew();
-            var itemsResults = session.Run($"MATCH (i:Item{{DbKey:'{dbkey}'}}) RETURN i LIMIT 1;");
+            var itemsResults = session.Run("MATCH (i:Item {DbKey:{dbk}}) RETURN i LIMIT 1;", new { dbk = dbkey });
             Item i = null;
             if (itemsResults != null)
             {
@@ -124,7 +124,7 @@ namespace Neo4jTest
             var items = new List<Item>();
 
             var sw = Stopwatch.StartNew();
-            var itemsResults = session.Run($"MATCH (:Item{{DbKey:'{dbkey}'}})-[rel:CONTAINS*0..]->(child) RETURN startNode(last(rel)).DbKey as DbKey, child as item;");
+            var itemsResults = session.Run("MATCH (:Item {DbKey:{dbk}})-[rel:CONTAINS*0..]->(child) RETURN startNode(last(rel)).DbKey as DbKey, child as item;", new { dbk = dbkey });
             if (itemsResults != null)
             {
                 foreach(var result in itemsResults)
@@ -190,7 +190,7 @@ namespace Neo4jTest
             var items = new List<Item>();
 
             var sw = Stopwatch.StartNew();
-            var itemsResults = session.Run($"MATCH (p:Item)-[c:CONTAINS]->(i:Item)-[r:BELONGS_TO]->(l:Lot {{Lot:'{lot}'}}) RETURN i as item, p.DbKey as DbKey;");
+            var itemsResults = session.Run("MATCH (p:Item)-[c:CONTAINS]->(i:Item)-[r:BELONGS_TO]->(l:Lot {Lot:{l}}) RETURN i as item, p.DbKey as DbKey;", new { l = lot });
             if (itemsResults != null)
             {
                 foreach (var result in itemsResults)
